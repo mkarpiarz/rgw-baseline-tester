@@ -1,0 +1,70 @@
+== Minimal Ceph cluster
+To create a VM with a small Ceph cluster simply run:
+
+-------
+$ vagrant up
+-------
+
+This will deploy containerised Ceph in a VM and copy its config and admin's keyring to the shared directory (which is the working directory).
+
+== Development container
+First, build the image:
+
+-------
+$ docker build . librados-dev:latest
+-------
+Then run the container:
+
+-------
+$ docker run -dit --name=librados-dev --net=host -v $(pwd):/src librados-dev:latest
+-------
+Get inside the container and make sure code compiles:
+
+-------
+$ docker exec -it librados-dev /bin/bash
+# cd /src/
+# make
+-------
+Make changes to the code on your host and recompile inside the container.
+
+[NOTE]
+=====
+When building the image, current version of the code is copied inside and compiled, so binaries (and the code) are available even without mounting host's directory.
+=====
+
+[NOTE]
+=====
+Container image builds with Ceph config and admin's keyring baked in from the current directory. If you don't want to rebuild the image every time this config/keyring changes or if you want to use your own config/keyring, simply mount them when starting a container by adding `-v <path-to-your-config>:/etc/ceph/ceph.conf` and/or `-v <path-to-your-keyring>:/etc/ceph/ceph.client.admin.keyring` to `docker run`.
+=====
+
+== Usage
+=== Main server
+`baseliner`, is a multithreaded, optimised for high performance and speed server written in C with various features that can be enabled with flags. Run it without parameters or with the `-h` flag to see what is supported.
+
+The `-v` flag turns on verbose output which is useful when developing, but is better left off when performance testing as it prints a lot to standard output.
+
+Regardless of what feature is enabled, you always have to specify a port number for the server to listen to.
+
+You can adjust maximum object size and read buffer size -- currently this is done by manually editing the source code and changing `MAX_CONTENT_SIZE` and `READ_BUFFER_SIZE` defined in the preprocessor section below the includes.
+
+In its simplest form the server accepts TCP traffic without sending anything back to the client, which is useful if you want to find the baseline for your TCP stack (this is similar to how `iperf` works).
+
+The `-w` flag transforms the server into a webserver that first waits for the header and then the data and confirms both steps by sending valid HTTP codes back to the client.
+
+The `-c` flag turns on integration with librados, so objects that the client sends to the server are stored in a Ceph cluster (Ceph config and an admin keyring are required, see previous section).
+
+[NOTE]
+=====
+When setting the `-c` flag, also specify the `-w` flag.
+=====
+
+=== Clients
+A few clients are available, each of them useful for simulating different workloads, depending on what is being tested:
+
+* `client_python.py` - a very basic client for sending simple strings of any size directly over a TCP socket. Can send objects one by one or in parallel (though threading model here is very basic).
+* `client_bash.sh` - uses `curl` to send a single byte to a HTTP endpoint. Best used against server with the `-w` flag set.
+* `client_s3` - the most comprehensive client, designed to work with S3 endpoints, including RADOS Gateway and server with the `-w` and `-c` flags. In its "send-mode" it will also work with the basic TCP version of the server. For it to work, AWS credentials formatted as in the `credentials.sample` file need to exist in `~/.aws/credentials`.
+
+For requests to S3-compatible endpoints you can also use the official `aswcli` client (installed by default in the development container).
+
+Each of the clients shows usage help when run without arguments.
